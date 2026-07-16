@@ -46,3 +46,5 @@ functions/.env
 # AI agent skills (local only, gak perlu di-share ke tim)
 .agents/
 .claude/skills/
+
+.claude/
