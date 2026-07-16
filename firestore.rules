@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId} {
+      allow read, write: if request.auth != null
+                          && request.auth.uid == userId;
+    }
+
+    match /daily_logs/{logId} {
+      allow read, write: if request.auth != null
+                          && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.userId;
+    }
+
+    match /daily_insights/{insightId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.userId;
+      allow write: if false;
+    }
+
+    match /weekly_recaps/{recapId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.userId;
+      allow write: if false;
+    }
+
+    match /recap_exports/{exportId} {
+      allow read, write: if request.auth != null
+                          && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.userId;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
