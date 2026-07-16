@@ -49,6 +49,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="checkin"
+        options={{
+          title: 'Check-in',
+          headerShown: false,
+          tabBarIcon: ({ color }) => (
+            <SymbolView
+              name={{ ios: 'heart.text.square', android: 'edit_note', web: 'edit_note' }}
+              tintColor={color}
+              size={28}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="two"
         options={{
           title: 'Tab Two',
