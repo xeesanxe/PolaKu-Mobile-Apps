@@ -1,5 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { AuthDesign } from '@/constants/AuthDesign';
 
@@ -20,6 +21,20 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color }) => <MaterialIcons name="home" size={26} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="checkin"
+        options={{
+          title: 'Check-in',
+          headerShown: false,
+          tabBarIcon: ({ color }) => (
+            <SymbolView
+              name={{ ios: 'heart.text.square', android: 'edit_note', web: 'edit_note' }}
+              tintColor={color}
+              size={28}
+            />
+          ),
         }}
       />
       <Tabs.Screen
