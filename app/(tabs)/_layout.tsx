@@ -2,6 +2,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthDesign } from '@/constants/AuthDesign';
 
 function TabPillIcon({
@@ -31,12 +32,22 @@ function TabPillIcon({
 }
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
-        tabBarStyle: { backgroundColor: AuthDesign.background, height: 64 },
+        tabBarStyle: {
+          backgroundColor: AuthDesign.background,
+          height: 64 + insets.bottom,
+          paddingBottom: insets.bottom,
+          borderTopWidth: 0,
+          elevation: 0,
+          shadowOpacity: 0,
+          shadowColor: 'transparent',
+        },
         tabBarItemStyle: { height: 56, paddingVertical: 4 },
         tabBarIconStyle: { width: '100%', height: '100%' },
       }}
