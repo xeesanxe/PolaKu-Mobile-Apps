@@ -143,6 +143,13 @@ export default function CheckInScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         {/* Header */}
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.headerBackButton}
+            onPress={() => router.back()}
+            hitSlop={8}
+          >
+            <MaterialIcons name="arrow-back" size={24} color={COLORS.onSurface} />
+          </TouchableOpacity>
           <Text style={styles.headline}>Halo!</Text>
           <Text style={styles.subtext}>Luangkan 1 menit untuk perbarui kondisimu hari ini.</Text>
         </View>
@@ -338,6 +345,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.background },
   container: { padding: 20, paddingBottom: 60, gap: 24 },
   header: { gap: 4 },
+  headerBackButton: { alignSelf: "flex-start", padding: 4, marginBottom: 4, marginLeft: -4 },
   headline: { fontSize: 28, fontWeight: "700", color: COLORS.onSurface },
   subtext: { fontSize: 14, color: COLORS.onSurfaceVariant },
   progressRow: { flexDirection: "row", justifyContent: "center", gap: 8 },

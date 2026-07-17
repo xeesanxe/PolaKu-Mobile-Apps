@@ -295,3 +295,204 @@ exports.generateDailyInsight = onDocumentWritten("daily_logs/{logId}",
         }
       }
     });
+
+const GOOD_MOODS = ["senang", "biasa"];
+const RECAP_COMPONENTS = ["sleep", "meal", "stress", "mood"];
+const GROQ_RECAP_TIMEOUT_MS = 5000;
+const MIN_LOGS_SINCE_LAST_RECAP = 7;
+
+const RECAP_FALLBACK_TEMPLATES = {
+  sleep: "Skor tidurmu minggu ini paling rendah dibanding yang lain. " +
+    "Coba biasain tidur di jam yang sama tiap malam, minimal 6-7 jam " +
+    "— kalau susah, hindari main HP 30 menit sebelum tidur.",
+  meal: "Pola makanmu minggu ini masih sering bolong. Coba atur alarm " +
+    "buat makan minimal 3x sehari, porsinya kecil dulu gak apa-apa, " +
+    "yang penting rutin.",
+  stress: "Level stresmu cukup tinggi minggu ini. Coba luangin 10-15 " +
+    "menit buat istirahat sejenak dari tugas — jalan santai atau " +
+    "dengerin musik bisa bantu.",
+  mood: "Mood-mu cenderung kurang baik minggu ini. Gak apa-apa buat " +
+    "cerita ke teman deket, atau ambil waktu buat hal kecil yang " +
+    "bikin senang.",
+};
+
+/**
+ * Rule-based (deterministic) 4-component score computation from up to 7
+ * recent daily_logs, per PRD Bagian 2.2.
+ * @param {Array<Object>} logs Up to 7 most recent daily_logs docs for one
+ *   user.
+ * @return {{scores: Object, support: Object, lowestComponent: string}} 4
+ *   component scores + overallScore, raw supporting numbers for display
+ *   (avg jam tidur, jumlah hari mood baik, dst), dan komponen yang
+ *   paling rendah.
+ */
+function computeWeeklyScores(logs) {
+  const totalLogged = logs.length;
+
+  const avgSleepHours = totalLogged === 0 ?
+    0 :
+    logs.reduce((sum, l) => sum + (l.sleepHours || 0), 0) / totalLogged;
+  const sleepScore = Math.min(100, Math.max(0, (avgSleepHours / 7) * 100));
+
+  const mealDaysOk = logs.filter((l) => l.mealFrequency >= 3).length;
+  const mealScore = totalLogged === 0 ? 0 : (mealDaysOk / totalLogged) * 100;
+
+  const avgStress = totalLogged === 0 ?
+    0 :
+    logs.reduce((sum, l) => sum + (l.stressLevel || 0), 0) / totalLogged;
+  const stressScore = 100 - avgStress;
+
+  const moodDaysOk = logs.filter((l) => GOOD_MOODS.includes(l.mood)).length;
+  const moodScore = totalLogged === 0 ? 0 : (moodDaysOk / totalLogged) * 100;
+
+  const scores = {
+    sleepScore: Math.round(sleepScore),
+    mealScore: Math.round(mealScore),
+    stressScore: Math.round(stressScore),
+    moodScore: Math.round(moodScore),
+  };
+  scores.overallScore = Math.round(
+      (scores.sleepScore + scores.mealScore +
+       scores.stressScore + scores.moodScore) / 4,
+  );
+
+  const support = {
+    totalLogged,
+    avgSleepHours: Math.round(avgSleepHours * 10) / 10,
+    moodDaysOk,
+  };
+
+  const componentScoreMap = {
+    sleep: scores.sleepScore,
+    meal: scores.mealScore,
+    stress: scores.stressScore,
+    mood: scores.moodScore,
+  };
+  const lowestComponent = RECAP_COMPONENTS.reduce(
+      (lowest, key) =>
+        (componentScoreMap[key] < componentScoreMap[lowest] ? key : lowest),
+      RECAP_COMPONENTS[0],
+  );
+
+  return {scores, support, lowestComponent};
+}
+
+/**
+ * Rule-based recommendation template based on the lowest-scoring component,
+ * used when LLM fails/times out.
+ * @param {string} lowestComponent One of 'sleep' | 'meal' | 'stress' |
+ *   'mood'.
+ * @return {string} Fallback recommendation text.
+ */
+function buildFallbackRecommendation(lowestComponent) {
+  return RECAP_FALLBACK_TEMPLATES[lowestComponent];
+}
+
+/**
+ * Sends only computed scores + the lowest component to the LLM — never raw
+ * logs — so the model rephrases verified facts instead of guessing patterns.
+ * @param {Object} scores 4 component scores + overallScore.
+ * @param {string} lowestComponent Lowest-scoring component key.
+ * @return {Promise<string>} LLM-generated recommendation text.
+ */
+async function callGroqForRecommendation(scores, lowestComponent) {
+  const prompt = `Kamu adalah asisten kesehatan untuk mahasiswa. Berikut ` +
+    `skor pola hidup mingguan satu user (data ini sudah diverifikasi, ` +
+    `bukan tebakan), skala 0-100:
+- Skor tidur: ${scores.sleepScore}
+- Skor pola makan: ${scores.mealScore}
+- Skor stres: ${scores.stressScore}
+- Skor mood: ${scores.moodScore}
+- Skor keseluruhan: ${scores.overallScore}
+- Komponen paling rendah minggu ini: ${lowestComponent}
+
+Tulis 2-3 kalimat rekomendasi habit dalam Bahasa Indonesia yang natural ` +
+    `dan suportif, fokus ke komponen paling rendah di atas, HANYA ` +
+    `berdasarkan data di atas. Jangan menambahkan asumsi, data lain, ` +
+    `atau diagnosis medis.`;
+
+  const completion = await groq.chat.completions.create({
+    messages: [{role: "user", content: prompt}],
+    model: "llama-3.3-70b-versatile",
+  });
+
+  return completion.choices[0].message.content.trim();
+}
+
+exports.generateWeeklyRecap = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "User harus login.");
+  }
+  const userId = request.auth.uid;
+
+  const lastRecapSnap = await db.collection("weekly_recaps")
+      .where("userId", "==", userId)
+      .orderBy("date", "desc")
+      .limit(1)
+      .get();
+
+  let newLogsQuery = db.collection("daily_logs")
+      .where("userId", "==", userId);
+  if (!lastRecapSnap.empty) {
+    const lastRecapDate = lastRecapSnap.docs[0].data().date;
+    newLogsQuery = newLogsQuery.where("date", ">", lastRecapDate);
+  }
+  const newLogsSnap = await newLogsQuery.get();
+
+  if (newLogsSnap.size < MIN_LOGS_SINCE_LAST_RECAP) {
+    throw new HttpsError(
+        "failed-precondition",
+        `Data logged belum cukup, baru ${newLogsSnap.size} dari ` +
+        `${MIN_LOGS_SINCE_LAST_RECAP} hari sejak recap terakhir.`,
+    );
+  }
+
+  const recentLogsSnap = await db.collection("daily_logs")
+      .where("userId", "==", userId)
+      .orderBy("date", "desc")
+      .limit(7)
+      .get();
+  const recentLogs = recentLogsSnap.docs.map((d) => d.data());
+  const {scores, support, lowestComponent} = computeWeeklyScores(recentLogs);
+
+  let recommendationText;
+  let source;
+  try {
+    recommendationText = await withTimeout(
+        callGroqForRecommendation(scores, lowestComponent),
+        GROQ_RECAP_TIMEOUT_MS,
+    );
+    source = "llm";
+  } catch (llmError) {
+    logger.error(
+        "generateWeeklyRecap: Groq call failed/timeout, using fallback",
+        llmError,
+    );
+    recommendationText = buildFallbackRecommendation(lowestComponent);
+    source = "fallback";
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+  const docRef = await db.collection("weekly_recaps").add({
+    userId,
+    date: today,
+    ...scores,
+    support,
+    lowestComponent,
+    recommendationText,
+    source,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info("Weekly recap generated", {userId, date: today, source});
+
+  return {
+    recapId: docRef.id,
+    date: today,
+    ...scores,
+    support,
+    lowestComponent,
+    recommendationText,
+    source,
+  };
+});
