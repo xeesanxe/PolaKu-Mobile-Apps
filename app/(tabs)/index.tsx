@@ -129,6 +129,11 @@ export default function HomeScreen() {
     router.push('/checkin');
   };
 
+  const openVoiceCheckIn = () => {
+    setModeModalVisible(false);
+    router.push('/check-in-voice');
+  };
+
   // ===================== TAMPILAN =====================
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -319,9 +324,7 @@ export default function HomeScreen() {
               </View>
             </Pressable>
 
-            {/* Mode Suara: UI placeholder dulu, fungsinya dikerjain terpisah
-                (voice record + transkrip) oleh anggota tim lain. */}
-            <Pressable style={styles.modeOption} onPress={() => {}}>
+            <Pressable style={styles.modeOption} onPress={openVoiceCheckIn}>
               <View style={styles.modeIconBox}>
                 <MaterialIcons name="mic" size={28} color={AuthDesign.primary} />
               </View>
