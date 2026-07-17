@@ -17,7 +17,7 @@ service cloud.firestore {
 
     match /daily_insights/{insightId} {
       allow read: if request.auth != null
-                  && request.auth.uid == resource.data.userId;
+                  && (resource == null || request.auth.uid == resource.data.userId);
       allow write: if false;
     }
 
