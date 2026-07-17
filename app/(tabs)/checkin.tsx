@@ -12,6 +12,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { getAuth } from "firebase/auth";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
 
 // ===== KONSTANTA =====
 const SLEEP_OPTIONS = [
@@ -125,8 +126,10 @@ export default function CheckInScreen() {
         inputMethod: "pilihan",
       });
 
-      Alert.alert("Berhasil", `Check-in tersimpan (${result.data.status})`);
       setCurrentStep(0); // reset ke step awal setelah berhasil submit
+      Alert.alert("Berhasil", `Check-in tersimpan (${result.data.status})`, [
+        { text: "OK", onPress: () => router.replace("/(tabs)") },
+      ]);
     } catch (error: any) {
       Alert.alert("Gagal", error.message);
     } finally {
