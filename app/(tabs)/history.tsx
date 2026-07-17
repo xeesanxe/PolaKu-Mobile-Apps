@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
+import * as Print from 'expo-print';
 import { onAuthStateChanged } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
@@ -70,6 +71,27 @@ const CHART_RANGES: { key: 'week' | 'month' | 'quarter'; label: string; days: nu
 
 function parseDate(dateStr: string) {
   return new Date(`${dateStr}T00:00:00`);
+}
+
+// expo-print di Android kadang nyangkut tanpa pernah resolve/reject
+// (known issue: https://github.com/expo/expo/issues/27570) — timeout ini
+// jaga-jaga biar user dapet pesan error yang jelas, bukan spinner selamanya.
+const PDF_TIMEOUT_MS = 15000;
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Proses generate PDF timeout')), ms)
+    ),
+  ]);
+}
+
+// Manual, gak pakai toLocaleString/Intl — sama alasan kayak dayLabel() di
+// bawah, Hermes kadang gak reliable dukung locale formatting di RN.
+function formatNow() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getDate()} ${MONTH_LABELS[d.getMonth()]} ${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function dayLabel(dateStr: string) {
@@ -137,6 +159,148 @@ function overallScoreDescription(score: number) {
   return 'Pola hidupmu minggu ini perlu diperhatikan lebih serius.';
 }
 
+// ===== PDF export (PMA-48,49,50,51) =====
+// Rule-based, sama persis formula computeCorrelationFlags di functions/index.js
+// — sengaja diduplikasi di client (bukan panggil Cloud Function) karena PDF
+// TIDAK BOLEH menyertakan teks insight/rekomendasi LLM (PMA-49), jadi murni
+// hitungan deterministik dari log yang udah ada di device.
+function computeFlagsForPdf(logs: DailyLog[]) {
+  const totalLogged = logs.length;
+  const lowSleepDays = logs.filter((l) => l.sleepHours < 5);
+  const lowSleepWithSymptoms = lowSleepDays.filter(
+    (l) => Array.isArray(l.symptoms) && l.symptoms.some((s) => s !== 'Tidak ada keluhan')
+  );
+  const irregularMealDays = logs.filter((l) => l.mealFrequency < 3);
+  const negativeMoodDays = logs.filter((l) =>
+    ['sedih', 'marah', 'kecewa', 'cemas'].includes(l.mood)
+  );
+  const avgStress =
+    totalLogged === 0 ? 0 : logs.reduce((sum, l) => sum + (l.stressLevel || 0), 0) / totalLogged;
+
+  return [
+    {
+      label: 'Tidur &lt; 5 jam disertai gejala',
+      active: lowSleepDays.length >= 3 && lowSleepWithSymptoms.length >= 2,
+      frequency: `${lowSleepDays.length} dari ${totalLogged} hari`,
+    },
+    {
+      label: 'Pola makan tidak teratur (&lt;3x/hari)',
+      active: irregularMealDays.length >= 4,
+      frequency: `${irregularMealDays.length} dari ${totalLogged} hari`,
+    },
+    {
+      label: 'Level stres tinggi',
+      active: avgStress >= 70,
+      frequency: `rata-rata ${Math.round(avgStress)}/100`,
+    },
+    {
+      label: 'Mood negatif',
+      active: negativeMoodDays.length >= 4,
+      frequency: `${negativeMoodDays.length} dari ${totalLogged} hari`,
+    },
+  ];
+}
+
+function buildSparklinePolyline(values: number[], width: number, height: number) {
+  if (values.length === 0) return '';
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const stepX = values.length > 1 ? width / (values.length - 1) : 0;
+  return values
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = height - ((v - min) / range) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+}
+
+function buildPdfHtml(recap: WeeklyRecap, logs: DailyLog[], rangeLabel: string) {
+  const disclaimer =
+    'Dokumen ini berisi data self-report dari aplikasi PolaKu, disusun sebagai ' +
+    'bahan diskusi dengan tenaga medis — BUKAN hasil diagnosis medis.';
+
+  const flags = computeFlagsForPdf(logs);
+  const activeFlags = flags.filter((f) => f.active);
+
+  const rows = logs
+    .map(
+      (l) => `<tr>
+        <td>${l.date}</td>
+        <td>${l.sleepHours} jam</td>
+        <td>${l.symptoms?.length ? l.symptoms.join(', ') : '-'}</td>
+        <td>${l.mealFrequency}x</td>
+        <td>${l.stressLevel}</td>
+        <td>${l.mood}</td>
+      </tr>`
+    )
+    .join('');
+
+  const sparkline = buildSparklinePolyline(
+    logs.map((l) => l.sleepHours),
+    280,
+    60
+  );
+
+  return `
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <style>
+        body { font-family: Helvetica, Arial, sans-serif; color: #191b21; padding: 24px; }
+        h1 { font-size: 18px; color: #024594; margin-bottom: 4px; }
+        .disclaimer { background: #fff3cd; border: 1px solid #ffe08a; padding: 10px 12px;
+          border-radius: 8px; font-size: 11px; margin: 12px 0; }
+        h2 { font-size: 14px; color: #024594; margin-top: 24px; margin-bottom: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        th, td { border: 1px solid #c3c6d3; padding: 6px 8px; text-align: left; }
+        th { background: #f0f0f7; }
+        .score-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+        .score-box { border: 1px solid #c3c6d3; border-radius: 8px; padding: 10px 14px; }
+        .score-box b { display: block; font-size: 16px; color: #024594; }
+        .flag { padding: 6px 0; font-size: 12px; border-bottom: 1px solid #e2e2e9; }
+        .footer { font-size: 10px; color: #737782; margin-top: 24px; }
+      </style>
+    </head>
+    <body>
+      <h1>Riwayat Pola Hidup — PolaKu</h1>
+      <p style="font-size:11px;color:#434751">Rentang data: ${rangeLabel}</p>
+      <div class="disclaimer">${disclaimer}</div>
+
+      <h2>Ringkasan Skor Mingguan (dari recap terakhir)</h2>
+      <div class="score-grid">
+        <div class="score-box">Tidur<b>${recap.support.avgSleepHours}j</b></div>
+        <div class="score-box">Makan<b>${recap.mealScore}%</b></div>
+        <div class="score-box">Stres<b>${recap.stressScore}/100</b></div>
+        <div class="score-box">Mood<b>${recap.support.moodDaysOk}/${recap.support.totalLogged} hari</b></div>
+        <div class="score-box">Keseluruhan<b>${recap.overallScore}/100</b></div>
+      </div>
+
+      <h2>Grafik Tren Tidur (jam)</h2>
+      <svg width="280" height="60"><polyline points="${sparkline}" fill="none" stroke="#024594" stroke-width="2"/></svg>
+
+      <h2>Tabel Log Harian</h2>
+      <table>
+        <tr><th>Tanggal</th><th>Tidur</th><th>Gejala</th><th>Makan</th><th>Stres</th><th>Mood</th></tr>
+        ${rows}
+      </table>
+
+      <h2>Pola yang Terdeteksi</h2>
+      ${
+        activeFlags.length === 0
+          ? '<p style="font-size:12px">Tidak ada pola signifikan terdeteksi pada rentang ini.</p>'
+          : activeFlags
+              .map((f) => `<div class="flag"><b>${f.label}</b> — ${f.frequency}</div>`)
+              .join('')
+      }
+
+      <div class="disclaimer">${disclaimer}</div>
+      <p class="footer">Dibuat otomatis oleh PolaKu pada ${formatNow()}.</p>
+    </body>
+  </html>`;
+}
+
 export default function HistoryScreen() {
   // ===================== LOGIC =====================
   const [uid, setUid] = useState<string | null>(null);
@@ -149,6 +313,7 @@ export default function HistoryScreen() {
 
   const [chartRange, setChartRange] = useState<'week' | 'month' | 'quarter'>('week');
   const [chartMetric, setChartMetric] = useState<'sleep' | 'stress'>('sleep');
+  const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const fetchLogs = useCallback(async (uid: string) => {
     setLogsLoading(true);
@@ -214,6 +379,39 @@ export default function HistoryScreen() {
   const chartLogs = [...allLogs].slice(0, chartDays).reverse();
   const recapLogs = [...allLogs].slice(0, 7).reverse();
 
+  const handleExportPdf = async () => {
+    // PMA-50: validasi rentang tanggal (yang lagi dipilih di toggle grafik) punya data.
+    if (chartLogs.length === 0) {
+      Alert.alert('Belum Ada Data', 'Rentang tanggal ini belum ada data check-in-nya.');
+      return;
+    }
+    if (!recap) {
+      Alert.alert(
+        'Belum Ada Rekap',
+        'Butuh minimal 7 hari check-in dulu buat bikin ringkasan skor mingguan.'
+      );
+      return;
+    }
+
+    setPdfGenerating(true);
+    try {
+      const rangeLabel = CHART_RANGES.find((r) => r.key === chartRange)!.label;
+      const html = buildPdfHtml(recap, chartLogs, rangeLabel);
+
+      // printAsync (bukan printToFileAsync + Sharing) — buka dialog print
+      // native Android langsung, biar Android sendiri yang nanganin file PDF
+      // & opsi "Save as PDF"/share, gak lewat file URI antar modul kita.
+      // Ini yang bikin dua percobaan sebelumnya (printToFileAsync + Sharing,
+      // dengan/tanpa copy manual) sama-sama kena "Missing/Not allowed READ".
+      await withTimeout(Print.printAsync({ html }), PDF_TIMEOUT_MS);
+    } catch (error) {
+      console.error('Gagal generate PDF:', error);
+      Alert.alert('Gagal', 'Gagal membuat PDF, coba lagi.');
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
+
   // ===================== TAMPILAN =====================
   if (!logsLoading && allLogs.length === 0) {
     return (
@@ -249,7 +447,7 @@ export default function HistoryScreen() {
             <ActivityIndicator color="#fff" style={{ marginVertical: 12 }} />
           ) : recap ? (
             <>
-              <View style={styles.overallScoreRow}>
+              <View style={styles.overallScoreRow} lightColor="transparent">
                 <Text style={styles.overallScoreNumber}>{recap.overallScore}</Text>
                 <Text style={styles.overallScoreMax}>/100</Text>
               </View>
@@ -266,29 +464,29 @@ export default function HistoryScreen() {
 
         {/* Rekap Mingguan */}
         {recap && (
-          <View style={styles.sectionBlock}>
-            <View style={styles.trendHeader}>
+          <View style={styles.sectionBlock} lightColor="transparent">
+            <View style={styles.trendHeader} lightColor="transparent">
               <Text style={styles.sectionTitle}>Rekap Mingguan</Text>
               <Text style={styles.dateRangeLabel}>{formatDateRangeLabel(recapLogs)}</Text>
             </View>
-            <View style={styles.recapGrid}>
+            <View style={styles.recapGrid} lightColor="transparent">
               <View style={styles.recapCard}>
-                <View style={styles.recapCardHeader}>
+                <View style={styles.recapCardHeader} lightColor="transparent">
                   <MaterialIcons name="bedtime" size={18} color={AuthDesign.primary} />
                   <Text style={styles.recapCardLabel}>Tidur</Text>
                 </View>
-                <View style={styles.recapCardValueRow}>
+                <View style={styles.recapCardValueRow} lightColor="transparent">
                   <Text style={styles.recapCardValue}>{recap.support.avgSleepHours}j</Text>
                   <Text style={styles.recapCardSubvalue}>Target 7j</Text>
                 </View>
               </View>
 
               <View style={styles.recapCard}>
-                <View style={styles.recapCardHeader}>
+                <View style={styles.recapCardHeader} lightColor="transparent">
                   <MaterialIcons name="restaurant" size={18} color={AuthDesign.primary} />
                   <Text style={styles.recapCardLabel}>Makan</Text>
                 </View>
-                <View style={styles.recapCardValueRow}>
+                <View style={styles.recapCardValueRow} lightColor="transparent">
                   <Text style={styles.recapCardValue}>{recap.mealScore}%</Text>
                   <Text style={styles.recapCardSubvalue}>
                     {MEAL_LABELS[SCORE_TIER(recap.mealScore)]}
@@ -297,11 +495,11 @@ export default function HistoryScreen() {
               </View>
 
               <View style={styles.recapCard}>
-                <View style={styles.recapCardHeader}>
+                <View style={styles.recapCardHeader} lightColor="transparent">
                   <MaterialIcons name="psychology" size={18} color={AuthDesign.primary} />
                   <Text style={styles.recapCardLabel}>Stres</Text>
                 </View>
-                <View style={styles.recapCardValueRow}>
+                <View style={styles.recapCardValueRow} lightColor="transparent">
                   <Text style={styles.recapCardValue}>
                     {STRESS_LABELS[SCORE_TIER(recap.stressScore)]}
                   </Text>
@@ -310,11 +508,11 @@ export default function HistoryScreen() {
               </View>
 
               <View style={styles.recapCard}>
-                <View style={styles.recapCardHeader}>
+                <View style={styles.recapCardHeader} lightColor="transparent">
                   <MaterialIcons name="sentiment-satisfied" size={18} color={AuthDesign.primary} />
                   <Text style={styles.recapCardLabel}>Mood</Text>
                 </View>
-                <View style={styles.recapCardValueRow}>
+                <View style={styles.recapCardValueRow} lightColor="transparent">
                   <Text style={styles.recapCardValue}>
                     {MOOD_LABELS[SCORE_TIER(recap.moodScore)]}
                   </Text>
@@ -328,8 +526,8 @@ export default function HistoryScreen() {
         )}
 
         {/* Grafik tren */}
-        <View style={styles.sectionBlock}>
-          <View style={styles.trendHeader}>
+        <View style={styles.sectionBlock} lightColor="transparent">
+          <View style={styles.trendHeader} lightColor="transparent">
             <Text style={styles.sectionTitle}>Grafik Tren</Text>
             <View style={styles.trendTabs}>
               <Pressable
@@ -355,7 +553,7 @@ export default function HistoryScreen() {
             </View>
           </View>
 
-          <View style={styles.rangeTabs}>
+          <View style={styles.rangeTabs} lightColor="transparent">
             {CHART_RANGES.map((r) => (
               <Pressable
                 key={r.key}
@@ -411,7 +609,7 @@ export default function HistoryScreen() {
         </View>
 
         {/* Riwayat Harian */}
-        <View style={styles.sectionBlock}>
+        <View style={styles.sectionBlock} lightColor="transparent">
           <Text style={styles.sectionTitle}>Riwayat Harian</Text>
           {allLogs.map((log) => {
             const summary = buildDaySummary(log);
@@ -432,15 +630,20 @@ export default function HistoryScreen() {
           })}
         </View>
 
-        {/* Export PDF — UI placeholder, backend generate-PDF belum ada */}
+        {/* Export PDF (PMA-48,49,50,51) — rentang tanggalnya ngikutin toggle grafik di atas */}
         <Pressable
           style={styles.pdfButton}
-          onPress={() =>
-            Alert.alert('Segera Hadir', 'Fitur unduh PDF masih dalam pengembangan.')
-          }
+          onPress={handleExportPdf}
+          disabled={pdfGenerating}
         >
-          <MaterialIcons name="picture-as-pdf" size={20} color="#fff" />
-          <Text style={styles.pdfButtonText}>Unduh PDF untuk Dokter</Text>
+          {pdfGenerating ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <MaterialIcons name="picture-as-pdf" size={20} color="#fff" />
+          )}
+          <Text style={styles.pdfButtonText}>
+            {pdfGenerating ? 'Menyiapkan PDF...' : 'Unduh PDF untuk Dokter'}
+          </Text>
         </Pressable>
         <Text style={styles.pdfNote}>
           Data rekapitulasi bisa dibagikan ke tenaga profesional.
