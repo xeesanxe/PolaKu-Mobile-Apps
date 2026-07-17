@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import { LineChart } from 'react-native-chart-kit';
+import { TrendChart } from '@/components/TrendChart';
 import * as Print from 'expo-print';
 import { onAuthStateChanged } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -25,7 +25,7 @@ import {
 
 import { Text, View } from '@/components/Themed';
 import { auth, db } from '@/services/firebase';
-import { AuthDesign, AuthSpacing } from '@/constants/AuthDesign';
+import { AuthDesign, AuthSpacing, AuthRadius } from '@/constants/AuthDesign';
 
 type DailyLog = {
   date: string;
@@ -577,32 +577,13 @@ export default function HistoryScreen() {
                 </Text>
               </View>
             ) : (
-              <LineChart
-                data={{
-                  labels: chartLogs.map((l) => dayLabel(l.date)),
-                  datasets: [
-                    {
-                      data: chartLogs.map((l) =>
-                        chartMetric === 'sleep' ? l.sleepHours : l.stressLevel
-                      ),
-                    },
-                  ],
-                }}
-                width={SCREEN_WIDTH - AuthSpacing.screenPadding * 2 - 64}
-                height={200}
-                bezier
-                withInnerLines={false}
-                withOuterLines={false}
-                withVerticalLabels={chartDays <= 7}
-                chartConfig={{
-                  backgroundGradientFrom: '#ffffff',
-                  backgroundGradientTo: '#ffffff',
-                  decimalPlaces: 0,
-                  color: (opacity = 1) => `rgba(2, 69, 148, ${opacity})`,
-                  labelColor: () => AuthDesign.onSurfaceVariant,
-                  propsForDots: { r: chartDays <= 7 ? '4' : '0', strokeWidth: '2', stroke: AuthDesign.primary },
-                }}
-                style={styles.trendChart}
+              <TrendChart
+                data={chartLogs.map((l) => ({
+                  date: l.date,
+                  value: chartMetric === 'sleep' ? l.sleepHours : l.stressLevel,
+                }))}
+                metric={chartMetric}
+                labels={chartLogs.map((l) => dayLabel(l.date))}
               />
             )}
           </View>
@@ -692,10 +673,15 @@ const styles = StyleSheet.create({
   },
   brandText: { fontSize: 18, fontWeight: '700', color: AuthDesign.primary },
   overallCard: {
-    borderRadius: 16,
+    borderRadius: AuthRadius.card,
     padding: 24,
     backgroundColor: AuthDesign.primary,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   overallLabel: { fontSize: 13, color: '#fff', opacity: 0.8, marginBottom: 4 },
   overallScoreRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
@@ -716,7 +702,7 @@ const styles = StyleSheet.create({
   recapCard: {
     width: '47%',
     backgroundColor: AuthDesign.brandAccent,
-    borderRadius: 12,
+    borderRadius: AuthRadius.card,
     padding: 14,
     gap: 8,
   },
@@ -727,12 +713,12 @@ const styles = StyleSheet.create({
   recapCardSubvalue: { fontSize: 11, color: AuthDesign.primary, opacity: 0.7 },
   trendTabs: {
     flexDirection: 'row',
-    backgroundColor: '#f0f0f7',
-    borderRadius: 999,
+    backgroundColor: AuthDesign.brandAccent + '30',
+    borderRadius: AuthRadius.chip,
     padding: 3,
     gap: 2,
   },
-  trendTab: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999 },
+  trendTab: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: AuthRadius.chip },
   trendTabActive: { backgroundColor: AuthDesign.primaryLight },
   trendTabText: { fontSize: 12, fontWeight: '600', color: AuthDesign.onSurfaceVariant },
   trendTabTextActive: { color: '#fff' },
@@ -740,7 +726,7 @@ const styles = StyleSheet.create({
   rangeTab: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: AuthRadius.chip,
     borderWidth: 1,
     borderColor: AuthDesign.outlineVariant,
   },
@@ -749,25 +735,36 @@ const styles = StyleSheet.create({
   rangeTabTextActive: { color: '#fff' },
   chartCard: {
     height: 256,
-    borderRadius: 12,
+    borderRadius: AuthRadius.card,
     borderWidth: 1,
     borderColor: AuthDesign.outlineVariant + '4D',
+    backgroundColor: AuthDesign.surface,
     padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
-  trendChart: { borderRadius: 12 },
+  trendChart: { borderRadius: AuthRadius.card },
   trendEmpty: { alignItems: 'center', justifyContent: 'center' },
   logRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#fff',
+    backgroundColor: AuthDesign.surface,
     borderWidth: 1,
-    borderColor: AuthDesign.outlineVariant,
-    borderRadius: 12,
+    borderColor: AuthDesign.outlineVariant + '4D',
+    borderRadius: AuthRadius.card,
     padding: 12,
     marginBottom: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   logDateBadge: {
     width: 44,
@@ -789,7 +786,7 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: AuthDesign.primary,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: AuthRadius.chip,
   },
   pdfButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   pdfNote: {
