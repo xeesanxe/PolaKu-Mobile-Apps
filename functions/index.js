@@ -13,6 +13,9 @@ const db = getFirestore();
 
 const groq = new Groq({apiKey: process.env.GROQ_API_KEY});
 
+// Import voiceExtract dari file terpisah
+const {voiceExtract} = require("./src/voiceExtract");
+
 exports.testGroqConnection = onRequest(async (req, res) => {
   try {
     const completion = await groq.chat.completions.create({
@@ -74,3 +77,6 @@ exports.saveDailyLog = onCall(async (request) => {
   logger.info("Daily log saved", {docId, status: result.status});
   return result;
 });
+
+// Export voiceExtract
+exports.voiceExtract = voiceExtract;

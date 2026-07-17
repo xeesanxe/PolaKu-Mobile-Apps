@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator } from 'react-native';
+import { StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, View as RNView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -35,6 +35,14 @@ const FIELD_LABELS: Record<string, string> = {
   mood: 'Mood',
 };
 
+const FIELD_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
+  sleepHours: 'bedtime',
+  symptoms: 'healing',
+  mealFrequency: 'restaurant',
+  stressLevel: 'psychology',
+  mood: 'sentiment-satisfied',
+};
+
 type Phase = 'intro' | 'processing' | 'followup' | 'summary' | 'submitting';
 
 export default function CheckInVoiceScreen() {
@@ -47,6 +55,8 @@ export default function CheckInVoiceScreen() {
   const [editingField, setEditingField] = useState<string | null>(null);
 
   const currentMissingField = missingFields[0];
+  const filledCount = Object.keys(FIELD_LABELS).length - missingFields.length;
+  const totalCount = Object.keys(FIELD_LABELS).length;
 
   const processRecording = async (uri: string) => {
     setPhase('processing');
@@ -150,49 +160,89 @@ export default function CheckInVoiceScreen() {
           <View style={styles.headerSpacer} lightColor="transparent" />
         </View>
 
+        {phase !== 'intro' && (
+          <View style={styles.progressRow} lightColor="transparent">
+            {Object.keys(FIELD_LABELS).map((key) => {
+              const isFilled = fields[key as keyof ExtractedFields] !== undefined;
+              return (
+                <RNView
+                  key={key}
+                  style={[
+                    styles.progressDot,
+                    { backgroundColor: isFilled ? AuthDesign.primary : AuthDesign.outlineVariant },
+                  ]}
+                />
+              );
+            })}
+            <Text style={[styles.progressText, { color: AuthDesign.onSurfaceVariant }]}>
+              {filledCount}/{totalCount} terisi
+            </Text>
+          </View>
+        )}
+
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {error && (
-            <Text style={{ color: AuthDesign.error, fontSize: 13, textAlign: 'center' }}>
-              {error}
-            </Text>
+            <View style={[styles.errorBox, { backgroundColor: AuthDesign.error + '10' }]}>
+              <MaterialIcons name="error-outline" size={16} color={AuthDesign.error} />
+              <Text style={{ color: AuthDesign.error, fontSize: 13, flex: 1 }}>{error}</Text>
+            </View>
           )}
 
           {phase === 'intro' && (
             <View style={[cardStyle, styles.card]}>
+              <RNView style={[styles.introIcon, { backgroundColor: AuthDesign.primary + '12' }]}>
+                <MaterialIcons name="record-voice-over" size={32} color={AuthDesign.primary} />
+              </RNView>
               <Text style={styles.promptTitle}>Ceritakan keseharianmu</Text>
               <Text style={[styles.promptHint, { color: AuthDesign.onSurfaceVariant }]}>
                 Sebutkan kalau bisa: jam tidur, keluhan fisik, jumlah makan, tingkat stres, dan
-                mood kamu hari ini.
+                mood kamu hari ini. Ngobrol santai aja, nggak perlu berurutan.
               </Text>
-              <VoiceRecorder onRecordingReady={processRecording} />
+              <VoiceRecorder onRecordingReady={processRecording} onReset={() => {}} />
             </View>
           )}
 
           {phase === 'processing' && (
             <View style={[cardStyle, styles.card, styles.centerContent]}>
-              <ActivityIndicator color={AuthDesign.primary} />
-              <Text style={{ color: AuthDesign.onSurfaceVariant, marginTop: 12 }}>
-                Memproses rekaman...
+              <ActivityIndicator color={AuthDesign.primary} size="large" />
+              <Text style={{ color: AuthDesign.onSurfaceVariant, marginTop: 12, fontSize: 14 }}>
+                Mendengarkan dan memahami ceritamu...
               </Text>
             </View>
           )}
 
           {(phase === 'followup' || phase === 'summary') && lastTranscript && (
-            <View style={[cardStyle, styles.card]}>
-              <Text style={styles.debugLabel}>Kamu bilang:</Text>
-              <Text style={{ color: AuthDesign.onSurfaceVariant, fontSize: 14, fontStyle: 'italic' }}>
-                "{lastTranscript}"
+            <View style={[cardStyle, styles.transcriptCard]}>
+              <View style={styles.transcriptHeader} lightColor="transparent">
+                <MaterialIcons name="format-quote" size={16} color={AuthDesign.outline} />
+                <Text style={[styles.debugLabel, { color: AuthDesign.onSurfaceVariant }]}>
+                  Kamu bilang
+                </Text>
+              </View>
+              <Text style={{ color: AuthDesign.onSurface, fontSize: 14, lineHeight: 20 }}>
+                {lastTranscript}
               </Text>
             </View>
           )}
 
           {phase === 'followup' && currentMissingField && (
             <View style={[cardStyle, styles.card]}>
+              <RNView style={[styles.followupIcon, { backgroundColor: AuthDesign.primary + '12' }]}>
+                <MaterialIcons
+                  name={FIELD_ICONS[currentMissingField]}
+                  size={24}
+                  color={AuthDesign.primary}
+                />
+              </RNView>
               <Text style={styles.promptTitle}>{FIELD_QUESTIONS[currentMissingField]}</Text>
 
-              <VoiceRecorder onRecordingReady={processRecording} />
+              <VoiceRecorder onRecordingReady={processRecording} onReset={() => {}} />
 
-              <Text style={[styles.orText, { color: AuthDesign.outline }]}>atau</Text>
+              <View style={styles.dividerRow} lightColor="transparent">
+                <RNView style={[styles.dividerLine, { backgroundColor: AuthDesign.outlineVariant }]} />
+                <Text style={[styles.orText, { color: AuthDesign.outline }]}>atau ketik</Text>
+                <RNView style={[styles.dividerLine, { backgroundColor: AuthDesign.outlineVariant }]} />
+              </View>
 
               {currentMissingField === 'mood' ? (
                 <View style={styles.chipGrid}>
@@ -272,13 +322,16 @@ export default function CheckInVoiceScreen() {
 
           {(phase === 'summary' || phase === 'submitting') && (
             <View style={[cardStyle, styles.card]}>
-              <Text style={styles.promptTitle}>Ringkasan Hari Ini</Text>
+              <View style={styles.summaryHeaderRow} lightColor="transparent">
+                <MaterialIcons name="checklist" size={20} color={AuthDesign.primary} />
+                <Text style={styles.promptTitle}>Ringkasan Hari Ini</Text>
+              </View>
 
               {Object.entries(FIELD_LABELS).map(([key, label]) =>
                 editingField === key ? (
                   <View key={key} style={styles.editRow} lightColor="transparent">
                     <Text
-                      style={{ color: AuthDesign.onSurfaceVariant, fontSize: 13, marginBottom: 4 }}
+                      style={{ color: AuthDesign.onSurfaceVariant, fontSize: 13, marginBottom: 6 }}
                     >
                       {label}
                     </Text>
@@ -366,7 +419,10 @@ export default function CheckInVoiceScreen() {
                   </View>
                 ) : (
                   <Pressable key={key} onPress={() => setEditingField(key)} style={styles.summaryRow}>
-                    <Text style={{ color: AuthDesign.onSurfaceVariant, fontSize: 13 }}>{label}</Text>
+                    <View style={styles.summaryLeftRow} lightColor="transparent">
+                      <MaterialIcons name={FIELD_ICONS[key]} size={18} color={AuthDesign.outline} />
+                      <Text style={{ color: AuthDesign.onSurfaceVariant, fontSize: 13 }}>{label}</Text>
+                    </View>
                     <View style={styles.summaryValueRow} lightColor="transparent">
                       <Text style={{ color: AuthDesign.onSurface, fontSize: 13, fontWeight: '600' }}>
                         {Array.isArray(fields[key as keyof ExtractedFields])
@@ -424,14 +480,36 @@ const styles = StyleSheet.create({
   backButton: { padding: 4 },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
   headerSpacer: { width: 30 },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingBottom: 12,
+  },
+  progressDot: { width: 8, height: 8, borderRadius: 4 },
+  progressText: { fontSize: 11, marginLeft: 6 },
   scrollContent: { padding: AuthSpacing.screenPadding, gap: 16, flexGrow: 1 },
-  card: { gap: 12 },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 10,
+  },
+  card: { gap: 12, alignItems: 'center' },
+  introIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  followupIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   centerContent: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
-  promptTitle: { fontSize: 17, fontWeight: '700' },
-  promptHint: { fontSize: 13, lineHeight: 19 },
-  debugLabel: { fontWeight: '700', fontSize: 13 },
-  orText: { textAlign: 'center', fontSize: 12 },
-  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  promptTitle: { fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  promptHint: { fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  transcriptCard: { gap: 8, backgroundColor: 'transparent' },
+  transcriptHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  debugLabel: { fontWeight: '600', fontSize: 12 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%' },
+  dividerLine: { flex: 1, height: 1 },
+  orText: { fontSize: 11 },
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
   chip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1.5 },
   textInput: {
     borderWidth: 1.5,
@@ -439,14 +517,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 46,
     fontSize: 14,
+    width: '100%',
   },
   continueButton: {
     paddingVertical: 14,
     borderRadius: AuthRadius.button,
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
   },
   continueButtonText: { fontSize: 14, fontWeight: '700' },
+  summaryHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -454,9 +535,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+    width: '100%',
   },
+  summaryLeftRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   summaryValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  editRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  editRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee', width: '100%' },
   smallDoneButton: {
     alignSelf: 'flex-start',
     marginTop: 8,
@@ -465,7 +548,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1.5,
   },
-  actionRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  actionRow: { flexDirection: 'row', gap: 10, marginTop: 8, width: '100%' },
   adjustButton: {
     flex: 1,
     paddingVertical: 14,
