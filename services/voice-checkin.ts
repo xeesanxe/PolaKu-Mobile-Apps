@@ -31,3 +31,19 @@ export async function extractVoiceCheckIn(audioUri: string): Promise<VoiceExtrac
   const result = await voiceExtractFn({ audioBase64 });
   return result.data;
 }
+
+export type SaveDailyLogInput = {
+  date: string;
+  sleepHours: number;
+  symptoms: string[];
+  mealFrequency: number;
+  stressLevel: number;
+  mood: string;
+  inputMethod: 'voice' | 'choice';
+};
+
+export async function saveDailyLog(input: SaveDailyLogInput) {
+  const saveDailyLogFn = httpsCallable(functions, 'saveDailyLog');
+  const result = await saveDailyLogFn(input);
+  return result.data;
+}
