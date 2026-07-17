@@ -1,11 +1,9 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { signOut } from 'firebase/auth';
-import { Pressable } from 'react-native';
+import { router } from 'expo-router';
 
 import { Text, View } from '@/components/Themed';
-import { auth } from '@/services/firebase';
 import { AuthDesign, AuthSpacing } from '@/constants/AuthDesign';
 
 export default function HomeScreen() {
@@ -20,12 +18,14 @@ export default function HomeScreen() {
           Insight harian dan Daily Check-in akan tampil di sini.
         </Text>
 
-        {/* Sementara — logout untuk testing alur auth guard */}
+        {/* Sementara — tombol testing PMA-24, akan dipindah ke alur Daily Check-in resmi */}
         <Pressable
-          onPress={() => signOut(auth)}
-          style={[styles.logoutButton, { borderColor: AuthDesign.outlineVariant }]}
+          onPress={() => router.push('/check-in-voice')}
+          style={[styles.testButton, { borderColor: AuthDesign.primary }]}
         >
-          <Text style={{ color: AuthDesign.error, fontWeight: '600' }}>Logout (testing)</Text>
+          <Text style={{ color: AuthDesign.primary, fontWeight: '600' }}>
+            🎤 Test Voice Check-in
+          </Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '700' },
   subtitle: { fontSize: 13, textAlign: 'center', paddingHorizontal: 24 },
-  logoutButton: {
+  testButton: {
     marginTop: 24,
     paddingVertical: 10,
     paddingHorizontal: 20,
