@@ -1,8 +1,10 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { signOut } from 'firebase/auth';
 
 import { Text, View } from '@/components/Themed';
+import { auth } from '@/services/firebase';
 import { AuthDesign, AuthSpacing } from '@/constants/AuthDesign';
 
 export default function ProfileScreen() {
@@ -14,8 +16,16 @@ export default function ProfileScreen() {
         </View>
         <Text style={styles.title}>Profile</Text>
         <Text style={[styles.subtitle, { color: AuthDesign.onSurfaceVariant }]}>
-          Info akun, pengaturan, dan logout akan tampil di sini.
+          Info akun dan pengaturan akan tampil di sini.
         </Text>
+
+        {/* Sementara — logout untuk testing alur auth guard */}
+        <Pressable
+          onPress={() => signOut(auth)}
+          style={[styles.logoutButton, { borderColor: AuthDesign.outlineVariant }]}
+        >
+          <Text style={{ color: AuthDesign.error, fontWeight: '600' }}>Logout (testing)</Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -33,4 +43,11 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '700' },
   subtitle: { fontSize: 13, textAlign: 'center', paddingHorizontal: 24 },
+  logoutButton: {
+    marginTop: 24,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
 });

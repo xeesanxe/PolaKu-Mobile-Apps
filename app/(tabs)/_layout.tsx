@@ -1,39 +1,52 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import type { ComponentProps } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { AuthDesign } from '@/constants/AuthDesign';
+
+function TabPillIcon({
+  name,
+  label,
+  focused,
+}: {
+  name: ComponentProps<typeof MaterialIcons>['name'];
+  label: string;
+  focused: boolean;
+}) {
+  return (
+    <View style={[styles.pill, focused && styles.pillActive]}>
+      <MaterialIcons
+        name={name}
+        size={22}
+        color={focused ? AuthDesign.onPrimary : AuthDesign.outline}
+      />
+      <Text
+        style={[styles.pillLabel, focused && styles.pillLabelActive]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: AuthDesign.primary,
-        tabBarInactiveTintColor: AuthDesign.outline,
-        headerShown: useClientOnlyValue(false, true),
-        headerTintColor: AuthDesign.onSurface,
-        headerStyle: { backgroundColor: AuthDesign.background },
-        tabBarStyle: { backgroundColor: AuthDesign.background },
+        headerShown: false,
+        tabBarShowLabel: false,
+        tabBarStyle: { backgroundColor: AuthDesign.background, height: 64 },
+        tabBarItemStyle: { height: 56, paddingVertical: 4 },
+        tabBarIconStyle: { width: '100%', height: '100%' },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <MaterialIcons name="home" size={26} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="checkin"
-        options={{
-          title: 'Check-in',
-          headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{ ios: 'heart.text.square', android: 'edit_note', web: 'edit_note' }}
-              tintColor={color}
-              size={28}
-            />
+          tabBarIcon: ({ focused }) => (
+            <TabPillIcon name="home" label="Beranda" focused={focused} />
           ),
         }}
       />
@@ -41,16 +54,36 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'History',
-          tabBarIcon: ({ color }) => <MaterialIcons name="history" size={26} color={color} />,
+          tabBarIcon: ({ focused }) => (
+            <TabPillIcon name="history" label="Riwayat" focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => <MaterialIcons name="person" size={26} color={color} />,
+          tabBarIcon: ({ focused }) => (
+            <TabPillIcon name="person" label="Profil" focused={focused} />
+          ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  pillActive: { backgroundColor: AuthDesign.primaryLight },
+  pillLabel: { fontSize: 12, fontWeight: '600', color: AuthDesign.outline },
+  pillLabelActive: { color: AuthDesign.onPrimary },
+});

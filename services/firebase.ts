@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 // @ts-ignore: getReactNativePersistence ada di runtime, tapi belum ke-cover di type definition Firebase v12.
 import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
@@ -13,9 +13,11 @@ const firebaseConfig = {
   appId: '1:368486797875:web:2d2f30187d3c27ac414946',
 };
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 
 export const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(AsyncStorage),
 });
-export const db = getFirestore(app);
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
